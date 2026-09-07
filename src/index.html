@@ -1,0 +1,45 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>业余无线电操作证书 · 模拟考试系统</title>
+<style>
+/*__STYLES__*/
+</style>
+</head>
+<body>
+<div id="app">
+  <header id="topbar">
+    <div class="brand">
+      <span class="brand-logo">📻</span>
+      <div class="brand-text">
+        <h1>业余无线电模拟考试</h1>
+        <p class="brand-sub">题库 v171031 · 1237 题</p>
+      </div>
+    </div>
+    <nav id="nav">
+      <button class="nav-btn" data-view="home">首页</button>
+      <button class="nav-btn" data-view="wrong">错题本 <span id="wrongBadge" class="badge hidden"></span></button>
+      <button class="nav-btn" data-view="stats">统计</button>
+      <button class="nav-btn" id="settingsBtn" title="设置">⚙</button>
+    </nav>
+  </header>
+
+  <main id="main"></main>
+
+  <div id="modalRoot" class="hidden"></div>
+  <div id="toast" class="hidden"></div>
+</div>
+
+<footer id="pageFooter">
+  依据中国无线电协会公布的《业余无线电台操作技术能力验证题库》(v171031) 制作 ·
+  A类 30题/40分钟/答对25题合格 · B类 50题/60分钟/答对40题合格 · C类 80题/90分钟/答对60题合格
+</footer>
+
+<script>
+/*__DATA__*/
+/*__APP_JS__*/
+</script>
+</body>
+</html>
