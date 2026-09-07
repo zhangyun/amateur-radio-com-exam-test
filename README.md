@@ -40,6 +40,7 @@ src/styles.css      样式
 src/app.js          前端逻辑（原生 JS，无框架、无外部依赖）
 tools/build.py      构建脚本：解析 GBK 题库 → 校验 → 内嵌数据/图片 → 生成单文件 HTML
 tools/e2e-test.js   Playwright 端到端冒烟测试
+tools/verify-answers.js   全量答案正确性校验：与官方题库源文件逐字段比对全部 1237 题（题干/四选项/正确答案/附图/类别），零依赖、无需浏览器
 database/           官方题库原始文件（勿改动）
 ```
 
@@ -53,6 +54,12 @@ python tools/build.py
 
 ```bash
 node tools/e2e-test.js
+```
+
+无需任何依赖、不启动浏览器的全量答案正确性校验：
+
+```bash
+node tools/verify-answers.js
 ```
 
 ## 题库版本说明
