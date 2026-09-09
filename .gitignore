@@ -1,5 +1,6 @@
-# 构建产物（运行 tools/build.py 重新生成）
-dist/
+# 构建产物（运行 tools/build.py / tools/build_2025.py 重新生成）
+dist/*
+!dist/*.html
 
 # WorkBuddy 系统目录（本地日志/缓存，不入库）
 .workbuddy/
