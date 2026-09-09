@@ -43,6 +43,15 @@ const shuffle = arr => { const a = arr.slice(); for (let i = a.length - 1; i > 0
 const esc = s => s.replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
 const fmtTime = s => `${String(Math.floor(s / 60)).padStart(2, "0")}:${String(s % 60).padStart(2, "0")}`;
 const classOf = q => q.classes.join("/");
+/* 正确答案原点索引集合（兼容旧数据 answer=0 与新版 ans 数组/多选） */
+const ansOf = q => (q.ans || (q.answer == null ? [0] : [].concat(q.answer))).map(Number);
+/* 单题是否答对：选中的原始索引集合与正确答案集合完全相等 */
+const isRight = (item, q) => {
+  const sel = (item.chosen || []).map(p => item.perm[p]).sort((a, b) => a - b);
+  const ans = ansOf(q).slice().sort((a, b) => a - b);
+  return sel.length === ans.length && ans.every((v, i) => v === sel[i]);
+};
+const correctText = q => ansOf(q).map(i => q.options[i]).join("；");
 function toast(msg, ms = 1800) {
   const t = $("#toast"); t.textContent = msg; t.classList.remove("hidden");
   clearTimeout(toast._h); toast._h = setTimeout(() => t.classList.add("hidden"), ms);
@@ -219,19 +228,21 @@ function renderQuiz(keepScroll) {
 
   const optHtml = item.perm.map((orig, pos) => {
     let cls = "opt";
-    if (item.chosen === pos) cls += " chosen";
-    if (s.submitted || (!isMock && settings.instantFeedback && item.chosen != null)) {
-      if (orig === 0) cls += " correct";
-      else if (item.chosen === pos) cls += " wrong";
+    const sel = item.chosen || [];
+    if (item.chosen && sel.indexOf(pos) > -1) cls += " chosen";
+    const showResult = s.submitted || (!isMock && item.locked);
+    if (showResult) {
+      if (ansOf(q).indexOf(orig) > -1) cls += " correct";
+      else if (sel.indexOf(pos) > -1) cls += " wrong";
     }
-    return `<button class="${cls}" data-pos="${pos}" ${(s.submitted || (!isMock && item.chosen != null)) ? "disabled" : ""}>
+    return `<button class="${cls}" data-pos="${pos}" ${showResult ? "disabled" : ""}>
       <span class="key">${"ABCD"[pos]}</span><span>${esc(q.options[orig])}</span></button>`;
   }).join("");
 
   let feedback = "";
-  if (!isMock && item.chosen != null) {
-    const ok = item.perm[item.chosen] === 0;
-    feedback = `<div class="feedback ${ok ? "ok" : "no"}">${ok ? "✓ 回答正确" : `✗ 回答错误，正确答案：${esc(q.options[0])}`}</div>`;
+  if (!isMock && item.locked) {
+    const ok = isRight(item, q);
+    feedback = `<div class="feedback ${ok ? "ok" : "no"}">${ok ? "✓ 回答正确" : `✗ 回答错误，正确答案：${esc(correctText(q))}`}</div>`;
   }
 
   const imgHtml = q.img ? `<div class="q-img-wrap"><img src="${DB_IMAGES[q.img]}" alt="${q.img}" data-zoom="${q.img}"></div>` : "";
@@ -246,7 +257,7 @@ function renderQuiz(keepScroll) {
       <div class="progress"><i style="width:${pct}%"></i></div>
     </div>
     <div class="q-card">
-      <div class="q-id">${clsTag} 类 · 题号 ${q.id} · 适用类别 ${classOf(q)}</div>
+      <div class="q-id">${clsTag} 类 · 题号 ${q.id} · 适用类别 ${classOf(q)}${ansOf(q).length > 1 ? ` · <span style="color:var(--amber)">多选题（需选出全部 ${ansOf(q).length} 项）</span>` : ""}</div>
       <div class="q-text">${esc(q.q)}</div>
       ${imgHtml}
       <div class="q-options">${optHtml}</div>
@@ -266,7 +277,7 @@ function renderQuiz(keepScroll) {
       <div class="sheet-grid">${s.list.map((it, i) => {
         let c = "sheet-cell";
         if (s.submitted) {
-          const right = it.perm[it.chosen] === 0;
+          const right = isRight(it, QMAP[it.qid]);
           c += it.chosen == null ? "" : right ? " result-right" : " result-wrong";
         } else if (it.chosen != null) c += " answered";
         if (i === s.idx) c += " current";
@@ -295,10 +306,27 @@ function renderQuiz(keepScroll) {
 
 function chooseOption(pos) {
   const item = session.list[session.idx];
-  if (session.submitted || item.chosen != null && session.mode !== "mock") return;
-  item.chosen = pos;
-  if (session.mode !== "mock") { recordAnswer(item, Date.now()); saveAll(); refreshBadge(); }
-  else store.set("session", { ids: session.ids, cls: session.cls, startedAt: session.startedAt, answers: session.list.map(i => i.chosen) });
+  if (session.submitted || item.locked) return;
+  const q = QMAP[item.qid];
+  const single = ansOf(q).length === 1;
+  const cur = item.chosen ? item.chosen.slice() : [];
+  let next;
+  if (session.mode !== "mock") {
+    // 练习：单选点即锁；多选切换选择，选满预期个数后锁定判分
+    if (single) next = [pos];
+    else next = cur.indexOf(pos) > -1 ? cur.filter(p => p !== pos) : [...cur, pos];
+    item.chosen = next.length ? next : null;
+    if (next.length >= ansOf(q).length) {
+      item.locked = true;
+      recordAnswer(item, Date.now()); saveAll(); refreshBadge();
+    }
+  } else {
+    // 考试：允许变更多选/单选直到交卷
+    if (single) next = [pos];
+    else next = cur.indexOf(pos) > -1 ? cur.filter(p => p !== pos) : [...cur, pos];
+    item.chosen = next.length ? next : null;
+    store.set("session", { ids: session.ids, cls: session.cls, startedAt: session.startedAt, answers: session.list.map(i => i.chosen) });
+  }
   renderQuiz(true);
 }
 
@@ -319,7 +347,7 @@ function confirmSubmit() {
 /* 单题结果写入进度与错题本 */
 function recordAnswer(item, now) {
   const q = QMAP[item.qid];
-  const right = item.perm[item.chosen] === 0;
+  const right = isRight(item, q);
   const p = progress[item.qid] || (progress[item.qid] = { seen: 0, right: 0, wrong: 0 });
   p.seen++; right ? p.right++ : p.wrong++; p.ts = now;
 
@@ -333,7 +361,8 @@ function recordAnswer(item, now) {
     }
   } else {
     const w = wrongBook[item.qid] || (wrongBook[item.qid] = { count: 0, streak: 0 });
-    w.count++; w.streak = 0; w.lastChosen = q.options[item.perm[item.chosen]]; w.ts = now;
+    const chosenTxt = (item.chosen || []).map(p => q.options[item.perm[p]]).join("，");
+    w.count++; w.streak = 0; w.lastChosen = chosenTxt; w.ts = now;
   }
 }
 
@@ -345,7 +374,7 @@ function applyAnswerRecords() {
     recordAnswer(item, now);
   }
   if (session.mode === "mock") {
-    const correct = session.list.filter(i => i.chosen != null && i.perm[i.chosen] === 0).length;
+    const correct = session.list.filter(i => i.chosen != null && isRight(i, QMAP[i.qid])).length;
     history.unshift({
       ts: now, mode: session.mode, cls: session.cls, correct, total: session.list.length,
       seconds: Math.floor((Date.now() - session.startedAt) / 1000),
@@ -386,15 +415,15 @@ function renderResult(auto) {
   const rule = DB_RULES[s.cls];
   const list = s.list;
   const answered = list.filter(i => i.chosen != null).length;
-  const correct = list.filter(i => i.chosen != null && i.perm[i.chosen] === 0).length;
+  const correct = list.filter(i => i.chosen != null && isRight(i, QMAP[i.qid])).length;
   const pass = correct >= rule.pass;
-  const wrongItems = list.filter(i => !(i.chosen != null && i.perm[i.chosen] === 0));
+  const wrongItems = list.filter(i => !(i.chosen != null && isRight(i, QMAP[i.qid])));
   const dur = Math.floor((Date.now() - s.startedAt) / 1000);
   const score = Math.round(correct / list.length * 100);
 
   const body = wrongItems.length ? wrongItems.map(item => {
     const q = QMAP[item.qid];
-    const chosenTxt = item.chosen == null ? "未作答" : esc(q.options[item.perm[item.chosen]]);
+    const chosenTxt = item.chosen == null ? "未作答" : esc((item.chosen).map(p => q.options[item.perm[p]]).join("，"));
     return `<div class="wrong-item" data-review="${item.qid}">
       <span class="wid">${q.id}</span>
       <span class="wq">${esc(q.q)}</span>
@@ -434,10 +463,10 @@ function showQuestionModal(qid) {
     <div style="font-size:16px;font-weight:600;white-space:pre-wrap">${esc(q.q)}</div>
     ${q.img ? `<div class="q-img-wrap"><img class="zoomed" src="${DB_IMAGES[q.img]}"></div>` : ""}
     <div class="q-options" style="margin-top:14px">
-      ${q.options.map((o, i) => `<div class="opt ${i === 0 ? "correct" : ""}" style="cursor:default"><span class="key">${"ABCD"[i]}</span><span>${esc(o)}</span></div>`).join("")}
+      ${q.options.map((o, i) => `<div class="opt ${ansOf(q).indexOf(i) > -1 ? "correct" : ""}" style="cursor:default"><span class="key">${"ABCD"[i]}</span><span>${esc(o)}</span></div>`).join("")}
     </div>
     <div style="margin-top:12px;font-size:13px;color:var(--text2)">
-      <span class="pill" style="background:var(--green-weak);color:var(--green)">正确答案: ${esc(q.options[0])}</span>
+      <span class="pill" style="background:var(--green-weak);color:var(--green)">正确答案: ${esc(correctText(q))}</span>
       ${w ? `<span class="pill" style="background:var(--red-weak);color:var(--red);margin-left:6px">上次错选: ${esc(w.lastChosen || "未作答")} · 错 ${w.count} 次</span>` : ""}
       ${p ? `<span style="margin-left:6px">个人累计: 练 ${p.seen} 次 · 对 ${p.right} / 错 ${p.wrong}</span>` : ""}
     </div>
@@ -637,7 +666,7 @@ function openSettings() {
 
   modal(`<h3>设置</h3>${rows}
     <div class="setting-row"><div><div class="s-label">关于</div>
-    <div class="s-desc">题库：中国无线电协会公布的业余无线电台操作技术能力验证题库 v171031，共 ${IDS.length} 题，附图 ${Object.keys(DB_IMAGES).length} 张。所有数据仅保存在本机。</div></div></div>
+    <div class="s-desc">题库：中国无线电协会公布的业余无线电台操作技术能力验证题库，共 ${IDS.length} 题（含多选 ${IDS.filter(id => ansOf(QMAP[id]).length > 1).length} 题），附图 ${Object.keys(DB_IMAGES).length} 张。所有数据仅保存在本机。</div></div></div>
     <div style="margin-top:16px;text-align:right"><button class="btn primary" onclick="closeModal()">完成</button></div>`, m => {
     m.querySelectorAll("[data-set]").forEach(cb => cb.onchange = () => {
       settings[cb.dataset.set] = cb.checked; store.set("settings", settings); toast("已保存");
